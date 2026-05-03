@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sorting Visualiser</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, sans-serif;
+      background: #0f1117;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+    }
+
+    h1 {
+      font-size: 28px;
+      font-weight: 500;
+      margin-bottom: 28px;
+      letter-spacing: -0.5px;
+    }
+
+    /* Controls row */
+    #controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+
+    select, button {
+      font-size: 14px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: 1px solid #333;
+      background: #1a1d27;
+      color: #e0e0e0;
+      cursor: pointer;
+    }
+
+    button:hover { background: #23273a; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* Bar chart */
+    #bars {
+      display: flex;
+      align-items: flex-end;
+      gap: 3px;
+      height: 260px;
+      width: 100%;
+      max-width: 700px;
+      padding: 0 4px;
+      margin-bottom: 20px;
+    }
+
+    /* Each bar — JavaScript creates these */
+    .bar {
+      flex: 1;
+      background: #378ADD;
+      border-radius: 3px 3px 0 0;
+      transition: height 0.08s, background 0.08s;
+      min-width: 4px;
+    }
+
+    /* Colour states — JS adds/removes these classes */
+    .bar.comparing { background: #EF9F27; } /* orange = comparing  */
+    .bar.swapping  { background: #E24B4A; } /* red    = swapping   */
+    .bar.sorted    { background: #1D9E75; } /* green  = sorted     */
+
+    /* Legend */
+    .legend {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: #888;
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+    }
+
+    /* Stats */
+    .stats {
+      display: flex;
+      gap: 32px;
+      margin-bottom: 16px;
+      font-size: 14px;
+      color: #888;
+    }
+
+    .stats span { font-weight: 500; color: #e0e0e0; }
+
+    /* Step explanation */
+    #explanation {
+      font-size: 14px;
+      color: #888;
+      background: #1a1d27;
+      border: 1px solid #2a2d3a;
+      border-radius: 8px;
+      padding: 10px 16px;
+      max-width: 700px;
+      width: 100%;
+      text-align: center;
+      min-height: 40px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Sorting visualiser</h1>
+
+  <!-- Controls -->
+  <div id="controls">
+    <select id="algo">
+      <option value="bubble">Bubble sort</option>
+      <option value="selection">Selection sort</option>
+    </select>
+    <button id="shuffle-btn">New array</button>
+    <button id="sort-btn">Sort</button>
+  </div>
+
+  <!-- The bars live here — JavaScript fills this in -->
+  <div id="bars"></div>
+
+  <!-- Legend -->
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#378ADD"></div>unsorted</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#EF9F27"></div>comparing</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#E24B4A"></div>swapping</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#1D9E75"></div>sorted</div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats">
+    <div>Comparisons: <span id="comps">0</span></div>
+    <div>Swaps: <span id="swaps">0</span></div>
+  </div>
+
+  <!-- Step explanation -->
+  <p id="explanation">Press "Sort" to begin.</p>
+
+  <script>
+    // --- GRAB HTML ELEMENTS ---
+    // We find each element by its id and store it in a variable
+    const barsEl  = document.getElementById('bars');
+    const compsEl = document.getElementById('comps');
+    const swapsEl = document.getElementById('swaps');
+    const explEl  = document.getElementById('explanation');
+    const algoEl  = document.getElementById('algo');
+
+    // --- DATA ---
+    // arr holds the numbers we're sorting
+    // comparisons and swapCount track the algorithm's work
+    let arr = [];
+    let comparisons = 0;
+    let swapCount   = 0;
+    let sorting     = false; // prevents clicking Sort twice at once
+
+    // --- INIT: fill the array with random numbers ---
+    function init() {
+      if (sorting) return; // don't reset while sorting is running
+
+      // Create an array of 20 random numbers between 10 and 99
+      arr = Array.from({ length: 20 }, () => Math.floor(Math.random() * 90) + 10);
+
+      // Reset counters
+      comparisons = 0;
+      swapCount   = 0;
+      compsEl.textContent = 0;
+      swapsEl.textContent = 0;
+      explEl.textContent  = 'Press "Sort" to begin.';
+
+      // Draw the bars (no highlights yet — all unsorted)
+      render(arr, [], [], []);
+    }
+
+    // --- RENDER: draw the bars on screen ---
+    // a         = the array of numbers
+    // comparing = list of positions to colour orange
+    // swapping  = list of positions to colour red
+    // sorted    = list of positions to colour green
+    function render(a, comparing, swapping, sorted) {
+      // Clear all existing bars and redraw from scratch
+      barsEl.innerHTML = '';
+
+      // Find the largest number so we can scale bar heights relative to it
+      const max = Math.max(...a);
+
+      // Loop through every number and create a bar div for it
+      a.forEach((v, i) => {
+        const bar = document.createElement('div');
+        bar.className = 'bar';
+
+        // Height is proportional to the value — tallest bar = 240px
+        bar.style.height = Math.round((v / max) * 240) + 'px';
+
+        // Apply colour class based on state
+        if (sorted.includes(i))       bar.classList.add('sorted');
+        else if (swapping.includes(i))  bar.classList.add('swapping');
+        else if (comparing.includes(i)) bar.classList.add('comparing');
+
+        barsEl.appendChild(bar);
+      });
+    }
+
+    // --- DELAY: pause for ms milliseconds ---
+    // Returns a Promise so async/await can pause execution here
+    function delay(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // --- BUBBLE SORT ---
+    // Repeatedly compares neighbours and swaps if they're in wrong order
+    // Biggest values "bubble up" to the end on each pass
+    async function bubbleSort() {
+      const n = arr.length;
+      const sorted = [];
+
+      // Outer loop: n-1 passes needed in the worst case
+      for (let i = 0; i < n - 1; i++) {
+
+        // Inner loop: each pass goes one position shorter
+        // because the last i positions are already sorted
+        for (let j = 0; j < n - i - 1; j++) {
+
+          // Count and display the comparison
+          comparisons++;
+          compsEl.textContent = comparisons;
+
+          // Highlight the two bars being compared (orange)
+          render(arr, [j, j + 1], [], sorted);
+          explEl.textContent = `Comparing ${arr[j]} and ${arr[j + 1]}. `
+            + (arr[j] > arr[j + 1] ? 'Left is bigger — swapping.' : 'Already in order — no swap.');
+
+          await delay(120); // pause so user can see
+
+          // If left > right, they're in wrong order — swap them
+          if (arr[j] > arr[j + 1]) {
+            render(arr, [], [j, j + 1], sorted); // highlight red
+            await delay(120);
+
+            // Swap using array destructuring — swaps two values in one line
+            [arr[j], arr[j + 1]] = [arr[j + 1], arr[j]];
+            swapCount++;
+            swapsEl.textContent = swapCount;
+          }
+        }
+
+        // After each pass, the last unsorted position is now correct
+        sorted.push(n - 1 - i);
+      }
+      sorted.push(0); // first element is also done by the end
+    }
+
+    // --- SELECTION SORT ---
+    // On each pass, finds the smallest value and places it at the front
+    async function selectionSort() {
+      const n = arr.length;
+      const sorted = [];
+
+      for (let i = 0; i < n - 1; i++) {
+        let minIdx = i; // assume first unsorted item is the smallest
+
+        explEl.textContent = `Pass ${i + 1}: scanning for the smallest value...`;
+
+        // Scan through everything after position i to find the actual minimum
+        for (let j = i + 1; j < n; j++) {
+          comparisons++;
+          compsEl.textContent = comparisons;
+
+          render(arr, [j, minIdx], [], sorted);
+          explEl.textContent = `Is ${arr[j]} smaller than current min ${arr[minIdx]}?`
+            + (arr[j] < arr[minIdx] ? ' Yes — new minimum!' : ' No.');
+
+          await delay(120);
+
+          if (arr[j] < arr[minIdx]) minIdx = j; // update the minimum position
+        }
+
+        // Place the minimum at position i
+        if (minIdx !== i) {
+          render(arr, [], [i, minIdx], sorted);
+          await delay(120);
+          [arr[i], arr[minIdx]] = [arr[minIdx], arr[i]];
+          swapCount++;
+          swapsEl.textContent = swapCount;
+        }
+
+        sorted.push(i); // position i is now locked in
+      }
+      sorted.push(n - 1);
+    }
+
+    // --- START SORT ---
+    // Called when the Sort button is clicked
+    async function startSort() {
+      if (sorting) return; // prevent double-clicking
+      sorting = true;
+      document.getElementById('sort-btn').disabled    = true;
+      document.getElementById('shuffle-btn').disabled = true;
+
+      // Read the dropdown and run the right algorithm
+      if (algoEl.value === 'bubble') {
+        await bubbleSort();
+      } else {
+        await selectionSort();
+      }
+
+      // Turn all bars green to show it's done
+      render(arr, [], [], arr.map((_, i) => i));
+      explEl.textContent = 'Done! All values are now sorted.';
+
+      sorting = false;
+      document.getElementById('sort-btn').disabled    = false;
+      document.getElementById('shuffle-btn').disabled = false;
+    }
+
+    // --- EVENT LISTENERS ---
+    // These watch for user actions and call the right function
+    document.getElementById('shuffle-btn').addEventListener('click', init);
+    document.getElementById('sort-btn').addEventListener('click', startSort);
+
+    // Run init() straight away so there's something on screen on load
+    init();
+  </script>
+
+</body>
+</html>
