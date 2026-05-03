@@ -1,5 +1,3 @@
-# sorting-visualiser
-
 # Sorting Visualiser
 
 An interactive web app that animates sorting algorithms in real time.
